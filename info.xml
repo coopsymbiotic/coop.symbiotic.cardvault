@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<extension key="coop.symbiotic.cardvault" type="module">
+  <file>cardvault</file>
+  <name>Card Vault</name>
+  <description>Please don't use this extension.</description>
+  <license>AGPL-3.0</license>
+  <maintainer>
+    <author>Mathieu Lutfy</author>
+    <email>mathieu@symbiotic.coop</email>
+  </maintainer>
+  <urls>
+    <url desc="Main Extension Page">http://FIXME</url>
+    <url desc="Documentation">http://FIXME</url>
+    <url desc="Support">http://FIXME</url>
+    <url desc="Licensing">http://www.gnu.org/licenses/agpl-3.0.html</url>
+  </urls>
+  <releaseDate>2016-11-23</releaseDate>
+  <version>1.0</version>
+  <develStage>beta</develStage>
+  <compatibility>
+    <ver>4.7</ver>
+  </compatibility>
+  <comments>Really, please don't use it.</comments>
+  <civix>
+    <namespace>CRM/Cardvault</namespace>
+  </civix>
+</extension>
