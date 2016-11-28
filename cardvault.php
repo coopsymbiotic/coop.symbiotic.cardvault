@@ -68,6 +68,9 @@ function cardvault_civicrm_alterPaymentProcessorParams($paymentObj, &$rawParams,
 }
 
 function cardvault_civicrm_summary($contact_id, &$content, &$contentPlacement = CRM_Utils_Hook::SUMMARY_BELOW) {
+  // Shows a preview of the credit card data that we have saved.
+  // This is more for debugging than anything else.
+  // Users and admins can also check the Contact Dashboard.
   $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1', [
     1 => [$contact_id, 'Positive'],
   ]);
