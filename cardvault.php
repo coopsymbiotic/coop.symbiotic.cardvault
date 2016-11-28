@@ -54,7 +54,8 @@ function cardvault_civicrm_managed(&$entities) {
 function cardvault_civicrm_alterPaymentProcessorParams($paymentObj, &$rawParams, &$cookedParams) {
   CRM_Cardvault_BAO_Cardvault::create([
     'contact_id' => $rawParams['contactID'],
-    'contribution_id' => $rawParams['contributionID'],
+    'contribution_id' => CRM_Utils_Array::value('contributionID', $rawParams),
+    'invoice_id' => CRM_Utils_Array::value('invoiceID', $rawParams),
     'billing_first_name' => $rawParams['billing_first_name'],
     'billing_last_name' => $rawParams['billing_last_name'],
     'credit_card_type' => $rawParams['credit_card_type'],
@@ -78,6 +79,24 @@ function cardvault_civicrm_summary($contact_id, &$content, &$contentPlacement = 
     $cc = $crypt->decrypt($dao->ccinfo);
     $cc_number = '************' . substr($cc['number'], -4, 4);
     $content .= '<p>' . $cc['cardholder'] . ', ' . $cc['type'] . ', ' . $cc_number . ', expires: ' . sprintf('%02d', $cc['month']) . '/' . $cc['year'] . '</p>';
+  }
+}
+
+/**
+ * Implements hook_civicrm_post().
+ */
+function cardvault_civicrm_post($op, $objectName, $objectId, &$objectRef) {
+  if (in_array($op, ['create', 'edit']) && $objectName == 'Contribution') {
+    $cardvault_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE invoice_id = %1 AND contribution_id IS NULL', [
+      1 => [$objectRef->invoice_id, 'String'],
+    ]);
+
+    if (!empty($cardvault_id)) {
+      CRM_Core_DAO::executeQuery('UPDATE civicrm_cardvault SET contribution_id = %1 WHERE id = %2', [
+        1 => [$objectRef->id, 'Positive'],
+        2 => [$cardvault_id, 'Positive'],
+      ]);
+    }
   }
 }
 

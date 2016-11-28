@@ -41,28 +41,56 @@ class CRM_Cardvault_BAO_Cardvault {
 
     $hash = $crypt->hashCardData($ccinfo);
 
-    if (CRM_Cardvault_Utils::card_hash_exists($params['contact_id'], $hash)) {
-      Civi::log()->info(ts('Card already in vault for Contact %1', [
+    // NB: ths contribution_id might not exist if backend form
+    // but that's OK, because we always associated 1 card = 1 transaction
+    // (in case they want to update one card for a payment, but not the other)
+    if (CRM_Cardvault_Utils::card_hash_exists($hash, $params['contact_id'], $params['contribution_id'])) {
+      Civi::log()->info(ts('Card already in vault for Contact %1, Contribution %2', [
         1 => $params['contact_id'],
+        2 => $params['contribution_id'],
       ]));
       return;
     }
 
-    CRM_Core_DAO::executeQuery('INSERT INTO civicrm_cardvault(contribution_id, contact_id, timestamp, ccinfo, hash)
-      VALUES (%1, %2, %3, %4, %5)', [
-      1 => [$params['contribution_id'], 'Positive'],
-      2 => [$params['contact_id'], 'Positive'],
-      3 => [time(), 'Positive'],
-      4 => [$cc, 'String'],
-      5 => [$hash, 'String'],
-    ]);
-
     // civicrm_contribution_recur.processor_id is the external ID for the payment processor
-    // this is required for editing the payment info.
-    $processor_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2', [
-      1 => [$params['contact_id'], 'Positive'],
-      2 => [$hash, 'String'],
-    ]);
+    // Required for editing the payment info.
+    $processor_id = NULL;
+
+    if (!empty($params['contribution_id'])) {
+      // Front-end form.
+      CRM_Core_DAO::executeQuery('INSERT INTO civicrm_cardvault(contribution_id, contact_id, timestamp, ccinfo, hash)
+        VALUES (%1, %2, %3, %4, %5)', [
+        1 => [$params['contribution_id'], 'Positive'],
+        2 => [$params['contact_id'], 'Positive'],
+        3 => [time(), 'Positive'],
+        4 => [$cc, 'String'],
+        5 => [$hash, 'String'],
+      ]);
+
+      $processor_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2 AND contribution_id = %3)', [
+        1 => [$params['contact_id'], 'Positive'],
+        2 => [$hash, 'String'],
+        3 => [$params['contribution_id'], 'Positive'],
+      ]);
+    }
+    else {
+      // Backend CiviCRM form, the contribution_id is not yet available.
+      // See hook_civicrm_post().
+      CRM_Core_DAO::executeQuery('INSERT INTO civicrm_cardvault(invoice_id, contact_id, timestamp, ccinfo, hash)
+        VALUES (%1, %2, %3, %4, %5)', [
+        1 => [$params['invoice_id'], 'String'],
+        2 => [$params['contact_id'], 'Positive'],
+        3 => [time(), 'Positive'],
+        4 => [$cc, 'String'],
+        5 => [$hash, 'String'],
+      ]);
+
+      $processor_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2 AND invoice_id = %3', [
+        1 => [$params['contact_id'], 'Positive'],
+        2 => [$hash, 'String'],
+        3 => [$params['invoice_id'], 'String'],
+      ]);
+    }
 
     /**
      * We create a pseudo recurring contribution tied to the Vault processor,
