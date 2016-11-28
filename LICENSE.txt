@@ -1,5 +1,6 @@
 Package: coop.symbiotic.cardvault
-Copyright (C) 2016, FIXME <FIXME>
+Copyright (C) 2016, Mathieu Lutfy <mathieu@symbiotic.coop>
+Copyright (C) 2016, Coop SymbioTIC <info@symbiotic.coop>
 Licensed under the GNU Affero Public License 3.0 (below).
 
 -------------------------------------------------------------------------------
