@@ -313,4 +313,15 @@ class CRM_Cardvault_Encrypt {
 
     return $array;
   }
+
+  /**
+   * Provides a hash that can be used to compare whether we have
+   * already saved a CC in the vault.
+   */
+  public function hashCardData($ccinfo) {
+    $hash = hash('sha256', $this->_key . $ccinfo['number'] . $ccinfo['cvv2']. $ccinfo['year'] . $ccinfo['month']);
+
+    return $hash;
+  }
+
 }
