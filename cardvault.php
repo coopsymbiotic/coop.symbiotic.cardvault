@@ -52,77 +52,18 @@ function cardvault_civicrm_managed(&$entities) {
  * Saves CC details the database.
  */
 function cardvault_civicrm_alterPaymentProcessorParams($paymentObj, &$rawParams, &$cookedParams) {
-  $ccinfo = [
-    'cardholder' => $rawParams['billing_first_name'] . ' ' . $rawParams['billing_last_name'],
-    'type' => $rawParams['credit_card_type'],
-    'number' => $rawParams['credit_card_number'],
-    'cvv2' => $rawParams['cvv2'],
-    'month' => (isset($rawParams['credit_card_exp_date']['M']) ? $rawParams['credit_card_exp_date']['M'] : $rawParams['credit_card_exp_date']['m']),
-    'year' => $rawParams['credit_card_exp_date']['Y'],
-  ];
-
-  $crypt = new CRM_Cardvault_Encrypt();
-  $cc = $crypt->encrypt($ccinfo);
-
-  $errors = $crypt->getErrors();
-  
-  if (count($errors)) {
-    watchdog('cardvault', 'encryption errors = ' . print_r($errors, 1));
-  }
-
-  $hash = hash('sha256', $key . $ccinfo['number'] . $ccinfo['cvv2']. $ccinfo['year'] . $ccinfo['month']);
-
-  if (CRM_Cardvault_Utils::card_hash_exists($rawParams['contactID'], $hash)) {
-    Civi::log()->info(ts('Card already in vault for Contact %1', [
-      1 => $rawParams['contactID'],
-    ]));
-    return;
-  }
-
-  CRM_Core_DAO::executeQuery('INSERT INTO civicrm_cardvault(contribution_id, contact_id, timestamp, ccinfo, hash)
-    VALUES (%1, %2, %3, %4, %5)', [
-    1 => [$rawParams['contributionID'], 'Positive'],
-    2 => [$rawParams['contactID'], 'Positive'],
-    3 => [time(), 'Positive'],
-    4 => [$cc, 'String'],
-    5 => [$hash, 'String'],
-  ]);
-
-  // civicrm_contribution_recur.processor_id is the external ID for the payment processor
-  // this is required for editing the payment info.
-  $processor_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2', [
-    1 => [$rawParams['contactID'], 'Positive'],
-    2 => [$hash, 'String'],
-  ]);
-
-  /**
-   * We create a pseudo recurring contribution tied to the Vault processor,
-   * this way we can piggy-back on the CiviCRM core forms for updating CC
-   * credentials.
-   *
-   * DOCUMENT: Assumes only one vault is enabled.
-   */
-  $vault_processor = civicrm_api3('PaymentProcessor', 'getsingle', [
-    'class_name' => 'Payment_Vault',
-    'is_active' => 1,
-    'is_test' => 0,
-  ]);
-
-  civicrm_api3('ContributionRecur', 'create', [
+  CRM_Cardvault_BAO_Cardvault::create([
     'contact_id' => $rawParams['contactID'],
-    'frequency_interval' => '1',
-    'frequency_unit' => 'year',
-    'amount' => '1' . sprintf('%02d', mt_rand(1,99)),
-    'contribution_status_id' => 2,
-    'start_date' => date('Y-m-d H:i:s'),
+    'contribution_id' => $rawParams['contributionID'],
+    'billing_first_name' => $rawParams['billing_first_name'],
+    'billing_last_name' => $rawParams['billing_last_name'],
+    'credit_card_type' => $rawParams['credit_card_type'],
+    'credit_card_number' => $rawParams['credit_card_number'],
+    'cvv2' => $rawParams['cvv2'],
+    'credit_card_expire_month' => (isset($rawParams['credit_card_exp_date']['M']) ? $rawParams['credit_card_exp_date']['M'] : $rawParams['credit_card_exp_date']['m']),
+    'credit_card_expire_year' => $rawParams['credit_card_exp_date']['Y'],
     'currency' => $rawParams['currencyID'],
-    'payment_processor_id' => $vault_processor['id'],
-    'processor_id' => $processor_id,
   ]);
-
-  Civi::log()->info(ts('Card saved to vault for Contact %1', [
-    1 => $rawParams['contactID'],
-  ]));
 }
 
 function cardvault_civicrm_summary($contact_id, &$content, &$contentPlacement = CRM_Utils_Hook::SUMMARY_BELOW) {

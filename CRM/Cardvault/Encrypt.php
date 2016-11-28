@@ -42,35 +42,17 @@ class CRM_Cardvault_Encrypt {
 
   /**
    * Loads the key from the Vault key file.
-   * Should we just use the CIVICRM_SITE_KEY?
    */
   function __construct() {
-    // FIXME: move to civicrm setting?
-    $key_dir = variable_get('cardvault_encryption_path', '');
-
-    if (!is_dir($key_dir)) {
-      CRM_Core_Error::fatal('Vault key directory does not exist.');
+    if (!function_exists('mcrypt_module_open')) {
+      CRM_Core_Error::fatal('Cardvault: php-mcrypt is missing.');
     }
 
-    $key_file = $key_dir . '/' . CIVICRMRECURRING_CREDIT_KEYFILE_NAME;
-
-    if (!file_exists($key_file)) {
-      CRM_Core_Error::fatal('Vault key file does not exist.');
+    if (!defined('CIVICRM_SITE_KEY')) {
+      CRM_Core_Error::fatal('Cardvault: CIVICRM_SITE_KEY is empty/undefined.');
     }
 
-    if (!$file = @fopen($key_file, 'r')) {
-      CRM_Core_Error::fatal('Could not open the Vault key file.');
-    }
-
-    $key = fread($file, filesize($key_file));
-    fclose($file);
-
-    // [ML] added, otherwise encrypt() complains of trailing newline
-    $this->_key = trim($key);
-
-    if (!$this->_key) {
-      CRM_Core_Error::fatal('Vault key file was empty.');
-    }
+    $this->_key = CIVICRM_SITE_KEY;
   }
 
   /**
@@ -85,12 +67,6 @@ class CRM_Cardvault_Encrypt {
   public function decrypt($source) {
     $this->errors = array();
 
-    // Convert key into sequence of numbers
-    $fudgefactor = $this->convertKey($this->_key);
-    if ($this->errors) {
-      return;
-    }
-
     if (empty($source)) {
       // Commented out to prevent errors getting logged for use cases that may
       // have variable encryption/decryption requirements. -RS
@@ -98,32 +74,7 @@ class CRM_Cardvault_Encrypt {
       return;
     }
 
-    $target = NULL;
-    $factor2 = 0;
-
-    for ($i = 0; $i < strlen($source); $i++) {
-      $char2 = substr($source, $i, 1);
-
-      $num2 = strpos(self::$scramble2, $char2);
-      if ($num2 === FALSE) {
-        $this->errors[] = t('Source string contains an invalid character (@char)', array('@char' => $char2));
-        return;
-      }
-
-      $adj = $this->applyFudgeFactor($fudgefactor);
-      $factor1 = $factor2 + $adj;
-      $num1 = $num2 - round($factor1);
-      $num1 = $this->checkRange($num1);
-      $factor2 = $factor1 + $num2;
-
-      $char1 = substr(self::$scramble1, $num1, 1);
-      $target .= $char1;
-    }
-
-    $target = rtrim($target);
-    $target = unserialize(base64_decode($target));
-
-    return $target;
+    return CRM_Utils_Crypt::decrypt($source);
   }
 
   /**
@@ -141,12 +92,6 @@ class CRM_Cardvault_Encrypt {
   public function encrypt($ccinfo, $sourcelen = 0) {
     $this->errors = array();
 
-    // Convert key into sequence of numbers
-    $fudgefactor = $this->convertKey($this->_key);
-    if ($this->errors) {
-      return;
-    }
-
     if (empty($ccinfo)) {
       // Commented out to prevent errors getting logged for use cases that may
       // have variable encryption/decryption requirements. -RS
@@ -157,32 +102,7 @@ class CRM_Cardvault_Encrypt {
     // Note that the encrypt function only works on ASCII
     $source = base64_encode(serialize($ccinfo));
 
-    while (strlen($source) < $sourcelen) {
-      $source .= ' ';
-    }
-
-    $target = NULL;
-    $factor2 = 0;
-
-    for ($i = 0; $i < drupal_strlen($source); $i++) {
-      $char1 = drupal_substr($source, $i, 1);
-
-      $num1 = strpos(self::$scramble1, $char1);
-      if ($num1 === FALSE) {
-        $this->errors[] = t('Source string contains an invalid character (@char)', array('@char' => $char1));
-        return;
-      }
-
-      $adj = $this->applyFudgeFactor($fudgefactor);
-      $factor1 = $factor2 + $adj;
-      $num2 = round($factor1) + $num1;
-      $num2 = $this->checkRange($num2);
-      $factor2 = $factor1 + $num2;
-      $char2 = substr(self::$scramble2, $num2, 1);
-      $target .= $char2;
-    }
-
-    return $target;
+    return CRM_Utils_Crypt::encrypt($source);
   }
 
   /**
@@ -190,128 +110,6 @@ class CRM_Cardvault_Encrypt {
    */
   public function getErrors() {
     return $this->errors;
-  }
-
-  /**
-   * Mutator for errors property.
-   */
-  public function setErrors(array $errors) {
-    $this->errors = $errors;
-  }
-
-  /**
-   * Accessor for adj property.
-   */
-  public function getAdjustment() {
-    return $this->adj;
-  }
-
-  /**
-   * Mutator for adj property.
-   */
-  public function setAdjustment($adj) {
-    $this->adj = (float) $adj;
-  }
-
-  /**
-   * Accessor for mod property.
-   */
-  public function getModulus() {
-    return $this->mod;
-  }
-
-  /**
-   * Mutator for mod property.
-   */
-  public function setModulus($mod) {
-    $this->mod = (int) abs($mod);
-  }
-
-  /**
-   * Returns an adjustment value based on the contents of $fudgefactor.
-   */
-  protected function applyFudgeFactor(&$fudgefactor) {
-    static $alerted = FALSE;
-
-    if (!is_array($fudgefactor)) {
-      $fudge = 0;
-      if (!$alerted) {
-        // Throw an error that makes sense so this stops getting reported.
-        $this->errors[] = t('No encryption key was found.');
-        drupal_set_message(t('Ubercart cannot find a necessary encryption key.  Refer to the store admin <a href="!url">dashboard</a> to isolate which one.', array('!url' => url('admin/store'))), 'error');
-
-        $alerted = TRUE;
-      }
-    }
-    else {
-      $fudge = array_shift($fudgefactor);
-    }
-
-    $fudge = $fudge + $this->adj;
-    $fudgefactor[] = $fudge;
-
-    if (!empty($this->mod)) {
-      if ($fudge % $this->mod == 0) {
-        $fudge = $fudge * -1;
-      }
-    }
-
-    return $fudge;
-  }
-
-  /**
-   * Checks that $num points to an entry in self::$scramble1.
-   */
-  protected function checkRange($num) {
-    $num = round($num);
-    $limit = strlen(self::$scramble1);
-
-    while ($num >= $limit) {
-      $num = $num - $limit;
-    }
-    while ($num < 0) {
-      $num = $num + $limit;
-    }
-
-    return $num;
-  }
-
-  /**
-   * Converts encryption key into an array of numbers.
-   *
-   * @param $key
-   *   Encryption key.
-   *
-   * @return
-   *   Array of integers.
-   */
-  protected function convertKey($key) {
-    if (empty($key)) {
-      // Commented out to prevent errors getting logged for use cases that may
-      // have variable encryption/decryption requirements. -RS
-      // $this->errors[] = 'No value has been supplied for the encryption key';
-      return;
-    }
-
-    $array[] = strlen($key);
-
-    $tot = 0;
-    for ($i = 0; $i < strlen($key); $i++) {
-      $char = substr($key, $i, 1);
-
-      $num = strpos(self::$scramble1, $char);
-      if ($num === FALSE) {
-        $this->errors[] = t('Key contains an invalid character (@char)', array('@char' => $char));
-        return;
-      }
-
-      $array[] = $num;
-      $tot = $tot + $num;
-    }
-
-    $array[] = $tot;
-
-    return $array;
   }
 
   /**
