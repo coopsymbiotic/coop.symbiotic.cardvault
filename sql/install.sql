@@ -1,6 +1,7 @@
 CREATE TABLE `civicrm_cardvault` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT COMMENT 'Entry ID',
-  `contribution_id` int(11) NOT NULL COMMENT 'CiviCRM contribution ID',
+  `contribution_id` int(11) DEFAULT NULL COMMENT 'CiviCRM contribution ID',
+  `invoice_id` `invoice_id` varchar(255) DEFAULT NULL COMMENT 'Contribution invoice ID',
   `contact_id` int(11) NOT NULL COMMENT 'CiviCRM contact ID',
   `timestamp` int(11) NOT NULL COMMENT 'A Unix timestamp indicating when this entry was added.',
   `ccinfo` text COMMENT 'Credit card information',
