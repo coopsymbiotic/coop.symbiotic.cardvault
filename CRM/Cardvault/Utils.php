@@ -4,29 +4,22 @@ class CRM_Cardvault_Utils {
   /**
    * Returns TRUE if the card hash already exists for a given contact.
    */
-  public static function card_hash_exists($hash, $contact_id, $contribution_id = NULL) {
-    if ($contribution_id) {
-      $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 AND contribution_id = %2 AND hash = %3', [
+  public static function card_hash_exists($hash, $contact_id, $invoice_id = NULL) {
+    if (!empty($invoice_id)) {
+      $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 AND invoice_id = %2 AND hash = %3', [
         1 => [$contact_id, 'Positive'],
-        2 => [$contribution_id, 'Positive'],
+        2 => [$invoice_id, 'String'],
         3 => [$hash, 'String'],
-      ]);
-
-      if ($dao->fetch()) {
-        return TRUE;
-      }
+      ])->fetch();
     }
     else {
-      $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2', [
+      $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 AND invoice_id IS NULL AND hash = %3', [
         1 => [$contact_id, 'Positive'],
-        2 => [$hash, 'String'],
+        3 => [$hash, 'String'],
       ]);
-
-      if ($dao->fetch()) {
-        return TRUE;
-      }
     }
 
-    return FALSE;
+    return $dao->fetch();
   }
 }
+

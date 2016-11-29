@@ -16,7 +16,9 @@ class CRM_Cardvault_BAO_Cardvault {
       CRM_Core_Error::fatal('Cardvault: Missing credit_card_number.');
     }
 
-    // TODO: validate other params?
+    // possible to have NULLs in other parameters (e.g., conversion)
+    // so no further validation.
+
     // Mostly called from cardvault_civicrm_alterPaymentProcessorParams(),
     // so params were validated upstream.
     // Also called from the migration scripts, they should validate too.
@@ -41,13 +43,13 @@ class CRM_Cardvault_BAO_Cardvault {
 
     $hash = $crypt->hashCardData($ccinfo);
 
-    // NB: ths contribution_id might not exist if backend form
+    // NB: this contribution_id/invoice_id might not exist if backend form
     // but that's OK, because we always associated 1 card = 1 transaction
     // (in case they want to update one card for a payment, but not the other)
-    if (CRM_Cardvault_Utils::card_hash_exists($hash, $params['contact_id'], $params['contribution_id'])) {
-      Civi::log()->info(ts('Card already in vault for Contact %1, Contribution %2', [
+    if (CRM_Cardvault_Utils::card_hash_exists($hash, $params['contact_id'], $params['invoice_id'])) {
+      Civi::log()->info(ts('Card already in vault for Contact %1, Invoice %2', [
         1 => $params['contact_id'],
-        2 => $params['contribution_id'],
+        2 => $params['invoice_id'],
       ]));
       return;
     }
@@ -56,41 +58,33 @@ class CRM_Cardvault_BAO_Cardvault {
     // Required for editing the payment info.
     $processor_id = NULL;
 
+    // Note contribution_id may be NULL in front end.  But invoice_id should always be present
+    // We keep contribution_id for convenience, but really, we should always use invoice_id
+    // TODO: Consider removing contribution_id altogether
+    $sqlParams = [
+      1 => [$params['contact_id'], 'Positive'],
+      2 => [$cc, 'String'],
+      3 => [$hash, 'String'],
+    ];
     if (!empty($params['contribution_id'])) {
-      // Front-end form.
-      CRM_Core_DAO::executeQuery('INSERT INTO civicrm_cardvault(contribution_id, contact_id, timestamp, ccinfo, hash)
-        VALUES (%1, %2, %3, %4, %5)', [
-        1 => [$params['contribution_id'], 'Positive'],
-        2 => [$params['contact_id'], 'Positive'],
-        3 => [time(), 'Positive'],
-        4 => [$cc, 'String'],
-        5 => [$hash, 'String'],
-      ]);
-
-      $processor_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2 AND contribution_id = %3)', [
-        1 => [$params['contact_id'], 'Positive'],
-        2 => [$hash, 'String'],
-        3 => [$params['contribution_id'], 'Positive'],
-      ]);
+      // both contribution always set with invoice.  So if contribution specified, so should invoice
+      $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id, contribution_id) VALUES(%1, %2, %3, %4, %5)";
+      $sqlParams[4] = [$params['invoice_id'], 'Positive'];
+      $sqlParams[5] = [$params['invoice_id'], 'Positive'];
+    } else if (!empty($params['invoice_id'])) {
+      // invoice should always be specified, except for conversions.
+      $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id) VALUES(%1, %2, %3, %4)";
+      $sqlParams[4] = [$params['invoice_id'], 'Positive'];
+    } else {
+      $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash) VALUES(%1, %2, %3)";
     }
-    else {
-      // Backend CiviCRM form, the contribution_id is not yet available.
-      // See hook_civicrm_post().
-      CRM_Core_DAO::executeQuery('INSERT INTO civicrm_cardvault(invoice_id, contact_id, timestamp, ccinfo, hash)
-        VALUES (%1, %2, %3, %4, %5)', [
-        1 => [$params['invoice_id'], 'String'],
-        2 => [$params['contact_id'], 'Positive'],
-        3 => [time(), 'Positive'],
-        4 => [$cc, 'String'],
-        5 => [$hash, 'String'],
-      ]);
+    CRM_Core_DAO::executeQuery($sql, $sqlParams);
 
-      $processor_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2 AND invoice_id = %3', [
-        1 => [$params['contact_id'], 'Positive'],
-        2 => [$hash, 'String'],
-        3 => [$params['invoice_id'], 'String'],
-      ]);
-    }
+    // imports & conversions may not have invoice_id, in which case, pick most recent... well for that, just always pick most recent for contat & card!
+    $processor_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE contact_id = %1 AND hash = %2 ORDER BY created_date DESC ', [
+      1 => [$params['contact_id'], 'Positive'],
+      2 => [$hash, 'String'],
+    ]);
 
     /**
      * We create a pseudo recurring contribution tied to the Vault processor,
@@ -122,3 +116,4 @@ class CRM_Cardvault_BAO_Cardvault {
     ]));
   }
 }
+
