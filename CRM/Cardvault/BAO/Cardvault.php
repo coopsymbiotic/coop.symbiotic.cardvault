@@ -69,12 +69,12 @@ class CRM_Cardvault_BAO_Cardvault {
     if (!empty($params['contribution_id'])) {
       // both contribution always set with invoice.  So if contribution specified, so should invoice
       $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id, contribution_id) VALUES(%1, %2, %3, %4, %5)";
-      $sqlParams[4] = [$params['invoice_id'], 'Positive'];
-      $sqlParams[5] = [$params['invoice_id'], 'Positive'];
+      $sqlParams[4] = [$params['invoice_id'], 'String'];
+      $sqlParams[5] = [$params['contribution_id'], 'Positive'];
     } else if (!empty($params['invoice_id'])) {
       // invoice should always be specified, except for conversions.
       $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id) VALUES(%1, %2, %3, %4)";
-      $sqlParams[4] = [$params['invoice_id'], 'Positive'];
+      $sqlParams[4] = [$params['invoice_id'], 'String'];
     } else {
       $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash) VALUES(%1, %2, %3)";
     }

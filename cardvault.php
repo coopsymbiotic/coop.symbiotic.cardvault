@@ -85,23 +85,6 @@ function cardvault_civicrm_summary($contact_id, &$content, &$contentPlacement = 
   }
 }
 
-/**
- * Implements hook_civicrm_post().
- */
-function cardvault_civicrm_post($op, $objectName, $objectId, &$objectRef) {
-  if (in_array($op, ['create', 'edit']) && $objectName == 'Contribution') {
-    $cardvault_id = CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_cardvault WHERE invoice_id = %1 AND contribution_id IS NULL', [
-      1 => [$objectRef->invoice_id, 'String'],
-    ]);
-
-    if (!empty($cardvault_id)) {
-      CRM_Core_DAO::executeQuery('UPDATE civicrm_cardvault SET contribution_id = %1 WHERE id = %2', [
-        1 => [$objectRef->id, 'Positive'],
-        2 => [$cardvault_id, 'Positive'],
-      ]);
-    }
-  }
-}
 
 /**
  * Implements hook_civicrm_xmlMenu().

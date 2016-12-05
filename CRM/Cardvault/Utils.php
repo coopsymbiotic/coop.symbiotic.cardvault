@@ -10,7 +10,7 @@ class CRM_Cardvault_Utils {
         1 => [$contact_id, 'Positive'],
         2 => [$invoice_id, 'String'],
         3 => [$hash, 'String'],
-      ])->fetch();
+      ]);
     }
     else {
       $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 AND invoice_id IS NULL AND hash = %3', [
