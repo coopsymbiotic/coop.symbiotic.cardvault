@@ -3,6 +3,36 @@
 class CRM_Cardvault_BAO_Cardvault {
 
   /**
+   *
+   * Retrieve credit card number for printing on receipts, and other places that need to "display" them
+   *
+   * Note that we never return a full credit ard number
+   *
+   * @param $contributionId
+   * @return null|string
+   */
+  public static function getCCNumber($contributionId) {
+    $sql = "SELECT ccinfo 
+              FROM civicrm_contribution c, civicrm_cardvault v
+             WHERE c.id = %1
+               AND c.contact_id = v.contact_id
+               AND c.invoice_id collate utf8_general_ci = v.invoice_id collate utf8_general_ci
+               ";
+    $sqlParams = [ 1 => [$contributionId, 'Positive']];
+    $dao = CRM_Core_DAO::executeQuery($sql, $sqlParams);
+    if (!$dao->fetch()) {
+      return NULL;
+    }
+
+    $crypt = new CRM_Cardvault_Encrypt();
+    $cc = $crypt->decrypt($dao->ccinfo);
+
+    $ccSafeNumber = str_repeat("*", strlen($cc['number']) - 4) . substr($cc['number'], strlen($cc['number']) - 4);
+
+    return $ccSafeNumber;
+  }
+
+  /**
    * Records a new card in the vault.
    *
    * See @cardvault_civicrm_alterPaymentProcessorParams for an example.
