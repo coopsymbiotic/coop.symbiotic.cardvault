@@ -11,7 +11,7 @@ class CRM_Cardvault_BAO_Cardvault {
    * @param $contributionId
    * @return null|string
    */
-  public static function getCCNumber($contributionId) {
+  public static function getCCInfo($contributionId) {
     $sql = "SELECT ccinfo 
               FROM civicrm_contribution c, civicrm_cardvault v
              WHERE c.id = %1
@@ -29,7 +29,10 @@ class CRM_Cardvault_BAO_Cardvault {
 
     $ccSafeNumber = str_repeat("*", strlen($cc['number']) - 4) . substr($cc['number'], strlen($cc['number']) - 4);
 
-    return $ccSafeNumber;
+    return [
+      'cc_type' => $cc['type'],
+      'cc_number' => $cc['number']
+    ];
   }
 
   /**

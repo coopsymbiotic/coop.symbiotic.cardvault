@@ -159,6 +159,24 @@ function cardvault_civicrm_upgrade($op, CRM_Queue_Queue $queue = NULL) {
 }
 
 /**
+ * @param $params
+ * @param $context
+ *
+ * When alterating a template for a contribution.  Add the masked cc_type and cc_number to
+ * the template
+ *
+ */
+function cardvault_civicrm_alterMailParams(&$params, $context) {
+  if ("messageTemplate" == $context && !empty($params['tplParams']['contributionID'])) {
+    $ccInfo = CRM_Cardvault_BAO_Cardvault::getCCInfo($params['tplParams']['contributionID']);
+    if ($ccInfo) {
+      $params['tplParams']['cc_number'] = $ccInfo['cc_type'];
+      $params['tplParams']['cc_number'] = $ccInfo['cc_number'];
+    }
+  }
+}
+
+/**
  * Implements hook_civicrm_caseTypes().
  *
  * Generate a list of case-types.
