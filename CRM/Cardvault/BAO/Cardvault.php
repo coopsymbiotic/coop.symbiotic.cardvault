@@ -31,7 +31,7 @@ class CRM_Cardvault_BAO_Cardvault {
 
     return [
       'cc_type' => $cc['type'],
-      'cc_number' => $cc['number']
+      'cc_number' => $ccSafeNumber
     ];
   }
 
