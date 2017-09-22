@@ -170,7 +170,7 @@ function cardvault_civicrm_alterMailParams(&$params, $context) {
   if ("messageTemplate" == $context && !empty($params['tplParams']['contributionID'])) {
     $ccInfo = CRM_Cardvault_BAO_Cardvault::getCCInfo($params['tplParams']['contributionID']);
     if ($ccInfo) {
-      $params['tplParams']['cc_number'] = $ccInfo['cc_type'];
+      $params['tplParams']['cc_type'] = $ccInfo['cc_type'];
       $params['tplParams']['cc_number'] = $ccInfo['cc_number'];
     }
   }
