@@ -41,12 +41,8 @@ class CRM_Core_Payment_Vault extends CRM_Core_Payment {
     return self::$_singleton[$processorName];
   }
 
-  function doDirectPayment(&$params) {
-    CRM_Core_Error::fatal('This method should not be called directly.');
-  }
-
   /**
-   * Check whether a method is present ( & supported ) by the payment processor object.
+   * Check whether a method is present (& supported) by the payment processor object.
    *
    * @param string $method
    *   Method to check for.
@@ -59,6 +55,50 @@ class CRM_Core_Payment_Vault extends CRM_Core_Payment {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Set additional fields when editing the schedule.
+   *
+   * This was copied from the iATS extension.
+   */
+  public function getEditableRecurringScheduleFields() {
+    return [
+      'installments',
+      'next_sched_contribution_date',
+    ];
+  }
+
+  /**
+   * Tell CiviCRM to display the "start_date" field on new backend
+   * contributions.
+   *
+   * @return bool
+   */
+  public function supportsFutureRecurStartDate() {
+    return TRUE;
+  }
+
+  /**
+   * The main payment function called when processing a credit card
+   * from the frontend or backend.
+   */
+  function doDirectPayment(&$params) {
+    CRM_Cardvault_BAO_Cardvault::create([
+      'contact_id' => $params['contactID'],
+      'contribution_id' => CRM_Utils_Array::value('contributionID', $params),
+      'invoice_id' => CRM_Utils_Array::value('invoiceID', $params),
+      'billing_first_name' => $params['first_name'],
+      'billing_last_name' => $params['last_name'],
+      'credit_card_type' => $params['credit_card_type'],
+      'credit_card_number' => $params['credit_card_number'],
+      'cvv2' => $params['cvv2'],
+      'credit_card_expire_month' => $params['month'],
+      'credit_card_expire_year' => $params['year'],
+      'currency' => $params['currencyID'],
+    ]);
+
+    Civi::log()->warning('doDirectPayment: ' . print_r($params, 1));
   }
 
   /**
@@ -82,10 +122,10 @@ class CRM_Core_Payment_Vault extends CRM_Core_Payment {
     $errors = $crypt->getErrors();
 
     if (count($errors)) {
-      watchdog('cardvault', 'encryption errors = ' . print_r($errors, 1));
+      Civi::log()->error('cardvault: encryption errors = ' . print_r($errors, 1));
     }
 
-    $hash = hash('sha256', $key . $ccinfo['number'] . $ccinfo['cvv2']. $ccinfo['year'] . $ccinfo['month']);
+    $hash = $crypt->hashCardData($ccinfo);
 
     // ************************************** * * * * * *
     // FIXME FIXME : if non-admin, make sure that the contact can edit this subscription ID.

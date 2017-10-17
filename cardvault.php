@@ -52,6 +52,12 @@ function cardvault_civicrm_managed(&$entities) {
  * Saves CC details the database.
  */
 function cardvault_civicrm_alterPaymentProcessorParams($paymentObj, &$rawParams, &$cookedParams) {
+  // This is set when we are processing a card from Cardvault,
+  // so we don't want to save it again.
+  if (!empty($rawParams['is_from_cardvault'])) {
+    return;
+  }
+
   CRM_Cardvault_BAO_Cardvault::create([
     'contact_id' => $rawParams['contactID'],
     'contribution_id' => CRM_Utils_Array::value('contributionID', $rawParams),
@@ -82,6 +88,35 @@ function cardvault_civicrm_summary($contact_id, &$content, &$contentPlacement = 
     $cc = $crypt->decrypt($dao->ccinfo);
     $cc_number = '************' . substr($cc['number'], -4, 4);
     $content .= '<p>' . $cc['cardholder'] . ', ' . $cc['type'] . ', ' . $cc_number . ', expires: ' . sprintf('%02d', $cc['month']) . '/' . $cc['year'] . '</p>';
+  }
+}
+
+/**
+ * Implements hook_civicrm_buildForm() is a completely overkill way.
+ * Searches for an override class named after the initial $formName
+ * and calls its buildForm().
+ *
+ * Ex: for a $formName "CRM_Case_Form_CaseView", it will:
+ * - try to find * CRM/Cardvault/Case/Form/CaseView.php,
+ * - require_once the file, instanciate an object, and
+ * - call its buildForm() function.
+ *
+ * Why so overkill? My buildForm() implementations tend to become
+ * really big and numerous, and even if I split up into multiple
+ * functions, it still makes a really long php file.
+ */
+function cardvault_civicrm_buildForm($formName, &$form) {
+  $formName = str_replace('CRM_', 'CRM_Cardvault_', $formName);
+  $parts = explode('_', $formName);
+  $filename = dirname(__FILE__) . '/' . implode('/', $parts) . '.php';
+
+  if (file_exists($filename)) {
+    require_once $filename;
+    $foo = new $formName;
+
+    if (method_exists($foo, 'buildForm')) {
+      $foo->buildForm($form);
+    }
   }
 }
 
@@ -212,6 +247,28 @@ _cardvault_civix_civicrm_angularModules($angularModules);
  */
 function cardvault_civicrm_alterSettingsFolders(&$metaDataFolders = NULL) {
   _cardvault_civix_civicrm_alterSettingsFolders($metaDataFolders);
+}
+
+/**
+ * Implements hook_civicrm_tokens().
+ */
+function cardvault_civicrm_tokens(&$tokens) {
+  if (!isset($tokens['contact'])) {
+    $tokens['contact'] = [];
+  }
+
+  if (!isset($tokens['cardvault'])) {
+    $tokens['cardvault'] = [];
+  }
+
+  $tokens['contact']['cardvault.card_on_file'] = ts('Cardvault card on file');
+}
+
+/**
+ * Implements hook_civicrm_tokenValues().
+ */
+function cardvault_civicrm_tokenValues(&$values, $cids, $job = null, $tokens = array(), $context = null) {
+  CRM_Cardvault_Tokens_General::tokenValues($values, $cids, $job, $tokens, $context);
 }
 
 /**

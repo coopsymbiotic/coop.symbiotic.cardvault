@@ -6,7 +6,7 @@ class CRM_Cardvault_BAO_Cardvault {
    *
    * Retrieve credit card number for printing on receipts, and other places that need to "display" them
    *
-   * Note that we never return a full credit ard number
+   * Note that we never return a full credit card number
    *
    * @param $contributionId
    * @return null|string
@@ -27,12 +27,19 @@ class CRM_Cardvault_BAO_Cardvault {
     $crypt = new CRM_Cardvault_Encrypt();
     $cc = $crypt->decrypt($dao->ccinfo);
 
-    $ccSafeNumber = str_repeat("*", strlen($cc['number']) - 4) . substr($cc['number'], strlen($cc['number']) - 4);
+    $ccSafeNumber = self::obfuscateCCnumber($cc['number']);
 
     return [
       'cc_type' => $cc['type'],
       'cc_number' => $ccSafeNumber
     ];
+  }
+
+  /**
+   * Given a CC number 4111111111111111, returns ************1111.
+   */
+  public static function obfuscateCCnumber($number) {
+    return str_repeat("*", strlen($number) - 4) . substr($number, strlen($number) - 4);
   }
 
   /**
@@ -148,5 +155,89 @@ class CRM_Cardvault_BAO_Cardvault {
       1 => $params['contact_id'],
     ]));
   }
+
+  /**
+   * Charges a card in the vault.
+   */
+  public static function charge($contribution_id) {
+    $contribution = civicrm_api3('Contribution', 'getsingle', [
+      'id' => $contribution_id,
+    ]);
+
+    if ($contribution['contribution_status_id'] == 1) {
+      throw new Exception("The contribution cannot be charged, it is already set as 'completed'.");
+    }
+
+    $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 ORDER BY created_date DESC', [
+      1 => [$contribution['contact_id'], 'Positive'],
+    ]);
+
+    if (!$dao->fetch()) {
+      throw new Exception("No card was found on file.");
+    }
+
+    // FIXME: needs refactoring
+    $crypt = new CRM_Cardvault_Encrypt();
+    $cc = $crypt->decrypt($dao->ccinfo);
+
+    // Generate a new invoice ID for this new contribution
+    // civicrm_api3_contribution_transact() does somethign similar.
+    $invoice_id = sha1(uniqid(rand(), TRUE));
+
+    $payment_params = [
+      'is_from_cardvault' => TRUE,
+      'contactID' => $contribution['contact_id'],
+      'billing_first_name' => '',
+      'billing_last_name' => '',
+      'amount' => $contribution['total_amount'],
+      'currencyID' => $contribution['currency'],
+      'invoiceID' => $invoice_id,
+      'invoice_id' => $invoice_id,
+      'credit_card_number' => '4111111111111111', // FIXME $cc['number'],
+      'cvv2' => $cc['cvv2'],
+      'street_address' => '',
+      'city' => '',
+      'state_province' => '',
+      'country' => '',
+    ];
+
+    $result = [];
+    $result['payment_status_id'] = 1; // Completed
+
+    $payment_processor_id = 4; // FIXME
+    $payment_processor_mode = 'test'; // FIXME ($contribution['is_test'] ? 'test' : 'live');
+
+    $paymentProcessor = CRM_Financial_BAO_PaymentProcessor::getPayment($payment_processor_id, $payment_processor_mode);
+
+    try {
+      $t = $paymentProcessor['object']->doPayment($payment_params);
+    }
+    catch (PaymentProcessorException $e) {
+      Civi::log()->error('Cardvault: failed payment: ' . $e->getMessage());
+      $result['error_message'] = $e->getMessage();
+      $result['payment_status_id'] = 4; // Failed
+    }
+
+    $result['trxn_id'] = $t['trxn_id'];
+    $result['invoice_id'] = $invoice_id;
+    $result['misc'] = $t;
+
+    // Update the contribution to 'complete' and save the invoice and trxn_id
+    if ($result['payment_status_id'] == 1) {
+      civicrm_api3('Contribution', 'create', [
+        'id' => $contribution_id,
+        'invoice_id' => $invoice_id,
+        'trxn_id' => $t['trxn_id'],
+      ]);
+
+      civicrm_api3('Contribution', 'completetransaction', [
+        'id' => $contribution_id,
+        'is_email_receipt' => 1,
+      ]);
+    }
+
+    return $result;
+  }
+
 }
 
