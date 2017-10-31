@@ -82,6 +82,8 @@ class CRM_Cardvault_BAO_Cardvault {
     }
 
     $hash = $crypt->hashCardData($ccinfo);
+    $expiry = $ccinfo['year'] . sprintf('%02d', $ccinfo['month']) . '01';
+    $mask = self::obfuscateCCnumber($ccinfo['number']);
 
     // NB: this contribution_id/invoice_id might not exist if backend form
     // but that's OK, because we always associated 1 card = 1 transaction
@@ -105,19 +107,26 @@ class CRM_Cardvault_BAO_Cardvault {
       1 => [$params['contact_id'], 'Positive'],
       2 => [$cc, 'String'],
       3 => [$hash, 'String'],
+      6 => [$ccinfo['type'], 'String'],
+      7 => [$expiry, 'Timestamp'],
+      8 => [$mask, 'String'],
     ];
+
     if (!empty($params['contribution_id'])) {
       // both contribution always set with invoice.  So if contribution specified, so should invoice
-      $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id, contribution_id) VALUES(%1, %2, %3, %4, %5)";
+      $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id, contribution_id, cc_type, expiry_date, masked_account_number) VALUES(%1, %2, %3, %4, %5, %6, %7, %8)";
       $sqlParams[4] = [$params['invoice_id'], 'String'];
       $sqlParams[5] = [$params['contribution_id'], 'Positive'];
-    } else if (!empty($params['invoice_id'])) {
+    }
+    elseif (!empty($params['invoice_id'])) {
       // invoice should always be specified, except for conversions.
-      $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id) VALUES(%1, %2, %3, %4)";
+      $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash, invoice_id, cc_type, expiry_date, masked_account_number) VALUES(%1, %2, %3, %4, %6, %7, %8)";
       $sqlParams[4] = [$params['invoice_id'], 'String'];
-    } else {
+    }
+    else {
       $sql = "INSERT INTO civicrm_cardvault(contact_id, ccinfo, hash) VALUES(%1, %2, %3)";
     }
+
     CRM_Core_DAO::executeQuery($sql, $sqlParams);
 
     // imports & conversions may not have invoice_id, in which case, pick most recent... well for that, just always pick most recent for contat & card!

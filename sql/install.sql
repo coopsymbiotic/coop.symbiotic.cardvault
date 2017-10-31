@@ -7,5 +7,7 @@ CREATE TABLE `civicrm_cardvault` (
   `ccinfo` text COMMENT 'Credit card information',
   `hash` varchar(128) DEFAULT NULL COMMENT 'Credit card information hash',
   `token` varchar(128) DEFAULT NULL COMMENT 'Credit card token',
+  `expiry_date` datetime DEFAULT NULL COMMENT 'Date this card expires',
+  `masked_account_number` varchar(255) DEFAULT NULL COMMENT 'Holds the part of the card number or account details that may be retained or displayed',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Keeps transaction information about recurring transactions.'
