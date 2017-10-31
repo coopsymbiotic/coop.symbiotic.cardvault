@@ -21,5 +21,5 @@ class CRM_Cardvault_Utils {
 
     return $dao->fetch();
   }
-}
 
+}
