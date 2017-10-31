@@ -272,18 +272,10 @@ function cardvault_civicrm_tokenValues(&$values, $cids, $job = null, $tokens = a
 }
 
 /**
- * Implements hook_civicrm_navigationMenu().
- *
- * @link http://wiki.civicrm.org/confluence/display/CRMDOC/hook_civicrm_navigationMenu
- *
-function cardvault_civicrm_navigationMenu(&$menu) {
-  _cardvault_civix_insert_navigation_menu($menu, NULL, array(
-    'label' => ts('The Page', array('domain' => 'coop.symbiotic.cardvault')),
-    'name' => 'the_page',
-    'url' => 'civicrm/the-page',
-    'permission' => 'access CiviReport,access CiviContribute',
-    'operator' => 'OR',
-    'separator' => 0,
-  ));
-  _cardvault_civix_navigationMenu($menu);
-} // */
+ * Implements hook_civicrm_queryObjects().
+ */
+function cardvault_civicrm_queryObjects(&$queryObjects, $type = 'Contact') {
+  if ($type == 'Contact') {
+    $queryObjects[] = new CRM_Cardvault_BAO_Query();
+  }
+}
