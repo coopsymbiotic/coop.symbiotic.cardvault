@@ -29,7 +29,9 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
       FROM civicrm_membership m
       LEFT JOIN civicrm_membership_payment mp ON (mp.membership_id = m.id)
       LEFT JOIN civicrm_contribution contrib ON (contrib.id = mp.contribution_id)
-      WHERE m.status_id = 3'; // FIXME hardcoded status (renewal ready)
+      WHERE m.status_id = 3'; // FIXME hardcoded status (renewal ready).  I think this is ok (Marc).
+
+  // FIXME: Only do things that have a corresponding cc vault entry for the contact
 
   // in case the job was called to execute a specific contact id
   if (!empty($params['contact_id'])) {
@@ -38,18 +40,24 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
   }
 
   // There can be multiple memberships for a given contribution
-  $sql .= ' GROUP BY contrib.id';
+  $sql .= ' ORDER BY m.contact_id, contrib.id DESC';
 
   $counter = 0;
   $error_count = 0;
   $output = [];
+  $last_contact_id = 0;
 
   $dao = CRM_Core_DAO::executeQuery($sql, $sqlparams);
 
   while ($dao->fetch()) {
     $contribution_id = $dao->contribution_id;
+    if ($last_contact_id == $dao->contact_id) {
+      continue;
+    }
+    $last_contact_id = $dao->contact_id;
 
     // FIXME: XXX: If no contribution was associated with the membership,
+    // SEE Cardvaultrenewoprhanedmemberships
     // assume it's a migration error and the two were not correctly associated.
     // Fetch the latest contribution for the contact.
     if (empty($contribution_id)) {
@@ -91,6 +99,7 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
 
     // FIXME: is it necessary? This was done to eventually charge the CC,
     // but also in hope that it magically fixed FinancialItem stuff.
+    // FIXME: IF it is, then I'm missing something in cardvaultreneworphanedmemberships.php
     if (!$contribution->loadRelatedObjects($input, $ids, TRUE)) {
       throw new API_Exception('failed to load related objects');
     }
@@ -107,7 +116,7 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
     $contribution->contribution_status_id = 2; // Pending
     $contribution->receive_date = date('YmdHis'); // Today
 
-// FIXME TODO?: $contribution->invoice_id = $invoice_id;
+    // FIXME TODO?: $contribution->invoice_id = $invoice_id;
 
     $contribution->save();
 
@@ -118,6 +127,7 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
     ]);
 
     foreach ($lineitem_result['values'] as $original_line_item) {
+      // FIXME: If 'hidden_tax', then skip
       $t = civicrm_api3('LineItem', 'create', [
         'entity_table' => 'civicrm_contribution',
         'entity_id' => $contribution->id,
@@ -125,13 +135,17 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
         'price_field_id' => $original_line_item['price_field_id'],
         'label' => $original_line_item['label'],
         'qty' => $original_line_item['qty'],
+        // FIXME: Use minimum_value from membership_type (if applicable)
         'unit_price' => $original_line_item['unit_price'],
+        // FIXME: Use minimum_value from membership_type (if applicable)
         'line_total' => $original_line_item['line_total'],
         'participant_count' => $original_line_item['participant_count'],
         'price_field_value_id' => $original_line_item['price_field_value_id'],
         'financial_type_id' => $original_line_item['financial_type_id'],
         'deductible_amount' => $original_line_item['deductible_amount'],
       ]);
+
+      // FIXME: If total amount > 0, then recalculate taxes, and create hiden_tax entry skipped above.
     }
 
     // Fetch all memberships for this contribution and associate the (future) contribution
@@ -206,4 +220,42 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
 */
   }
 
+}
+
+
+function calculateTaxes($contact, $total_amount) {
+  return $total_amount * getTaxRate($contact);
+}
+
+function getTaxRate($contact) {
+  switch ($contact->state_province_id) {
+    case "1100":
+      return 0.05; // Alberta
+    case "1101":
+      return 0.05; // 0.12; // British Columbia
+    case "1102":
+      return 0.05; // 0.13; // Manitoba
+    case "1103":
+      return 0.15; // New-Brunswick
+    case "1104":
+      return 0.15; // Newfoundland and Labrador
+    case "1105":
+      return 0.05; // Northwest Territories
+    case "1106":
+      return 0.15; // Nova Scotia
+    case "1107":
+      return 0.05; // Nunavut
+    case "1108":
+      return 0.13; // Ontario
+    case "1109":
+      return 0.14; // Prince Edward Island
+    case "1110":
+      return 0.05; // 0.14975; // Quebec
+    case "1111":
+      return 0.05; // 0.10; // Saskatchewan
+    case "1112":
+      return 0.05; // Yukon Territory
+    default:
+      return 0.00;
+  }
 }

@@ -1,4 +1,4 @@
-CREATE TABLE `civicrm_cardvault` (
+CREATE TABLE IF NOT EXISTS `civicrm_cardvault` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT COMMENT 'Entry ID',
   `contribution_id` int(10) unsigned DEFAULT NULL COMMENT 'CiviCRM contribution ID' REFERENCES civicrm_contribution(id),
   `invoice_id` varchar(255) DEFAULT NULL COMMENT 'Contribution invoice ID, implicit reference to contribution',
