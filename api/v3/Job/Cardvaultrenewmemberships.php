@@ -106,18 +106,11 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
 
     unset($contribution->id, $contribution->receive_date, $contribution->invoice_id, $contribution->trxn_id);
 
-    // Generate a new invoice ID for this new contribution
-    // civicrm_api3_contribution_transact() does somethign similar.
-    $invoice_id = sha1(uniqid(rand(), TRUE));
-
     // Set the contribution status to Pending, since we are not charging yet
     // and receive_date (for now) set to 'today', even if we haven't charged it yet,
     // but we will update this in the API call that processes this.
     $contribution->contribution_status_id = 2; // Pending
     $contribution->receive_date = date('YmdHis'); // Today
-
-    // FIXME TODO?: $contribution->invoice_id = $invoice_id;
-
     $contribution->save();
 
     $lineitem_result = civicrm_api3('LineItem', 'get', [
