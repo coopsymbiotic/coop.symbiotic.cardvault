@@ -279,3 +279,16 @@ function cardvault_civicrm_queryObjects(&$queryObjects, $type = 'Contact') {
     $queryObjects[] = new CRM_Cardvault_BAO_Query();
   }
 }
+
+/**
+ * Implements hook_civicrm_searchTasks().
+ */
+function cardvault_civicrm_searchTasks($objectType, &$tasks) {
+  if ($objectType == 'membership') {
+    $tasks[105] = array(
+      'title' => ts('Cardvault: Renew membership pending contribution', array('domain' => 'coop.symbiotic.cardvault')),
+      'class' => 'CRM_Cardvault_Form_Task_Renewpending',
+      'result' => TRUE,
+    );
+  }
+}

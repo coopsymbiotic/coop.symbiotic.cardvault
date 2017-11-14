@@ -51,10 +51,20 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
 
   while ($dao->fetch()) {
     $contribution_id = $dao->contribution_id;
+
     if ($last_contact_id == $dao->contact_id) {
       continue;
     }
     $last_contact_id = $dao->contact_id;
+
+    // Only prepare a contribution for contacts that have a saved card (in cardvault).
+    $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 ORDER BY created_date DESC', [
+      1 => [$dao->contact_id, 'Positive'],
+    ]);
+
+    if (!$dao->fetch()) {
+      continue;
+    }
 
     // FIXME: XXX: If no contribution was associated with the membership,
     // SEE Cardvaultrenewoprhanedmemberships
@@ -115,30 +125,85 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
 
     $lineitem_result = civicrm_api3('LineItem', 'get', [
       'sequential' => 1,
-      'entity_table' => 'civicrm_contribution',
-      'entity_id' => $original_contribution->id,
+      // 'entity_table' => 'civicrm_contribution',
+      'contribution_id' => $original_contribution->id,
     ]);
 
+    $new_total_amount = 0;
+    $tax_line_item = NULL;
+
     foreach ($lineitem_result['values'] as $original_line_item) {
-      // FIXME: If 'hidden_tax', then skip
-      $t = civicrm_api3('LineItem', 'create', [
+      // If 'hidden_tax', then skip
+      // FIXME: hack specific to CIC, because they are not (yet) using cdntaxcalculator.
+      if ($original_line_item['label'] == 'hidden_taxes') {
+        $tax_line_item = $original_line_item;
+        continue;
+      }
+
+      $p = [
         'entity_table' => 'civicrm_contribution',
         'entity_id' => $contribution->id,
         'contribution_id' => $contribution->id,
         'price_field_id' => $original_line_item['price_field_id'],
         'label' => $original_line_item['label'],
         'qty' => $original_line_item['qty'],
-        // FIXME: Use minimum_value from membership_type (if applicable)
         'unit_price' => $original_line_item['unit_price'],
-        // FIXME: Use minimum_value from membership_type (if applicable)
         'line_total' => $original_line_item['line_total'],
         'participant_count' => $original_line_item['participant_count'],
         'price_field_value_id' => $original_line_item['price_field_value_id'],
         'financial_type_id' => $original_line_item['financial_type_id'],
         'deductible_amount' => $original_line_item['deductible_amount'],
+      ];
+
+      // Fetch the current amount of the line item (handle price increases).
+      $pfv = civicrm_api3('PriceFieldValue', 'getsingle', [
+        'id' => $original_line_item['price_field_value_id'],
       ]);
 
-      // FIXME: If total amount > 0, then recalculate taxes, and create hiden_tax entry skipped above.
+      $p['unit_price'] = $pfv['amount'];
+      $p['line_total'] = $pfv['amount'] * $p['qty'];
+
+      if (empty($p['line_total'])) {
+        $p['line_total'] = '0';
+      }
+
+      $t = civicrm_api3('LineItem', 'create', $p);
+
+      $new_total_amount += $p['line_total'];
+    }
+
+    // If total amount > 0, then recalculate taxes, and create hiden_tax entry skipped above.
+    // nb: the 'amount' of the line_item for hidden_taxes should always be 1.
+    if ($new_total_amount > 0 && $tax_line_item !== NULL) {
+      $taxes = CRM_Cdntaxcalculator_BAO_CDNTaxes::getTaxesForContact($dao->contact_id);
+
+      $tax_line_item['qty'] = round($new_total_amount * ($taxes['HST_GST']/100), 2);
+      $tax_line_item['line_total'] = $tax_line_item['amount'] * $tax_line_item['qty'];
+
+      $p = [
+        'entity_table' => 'civicrm_contribution',
+        'entity_id' => $contribution->id,
+        'contribution_id' => $contribution->id,
+        'price_field_id' => $tax_line_item['price_field_id'],
+        'label' => $tax_line_item['label'],
+        'qty' => $tax_line_item['qty'],
+        'unit_price' => $tax_line_item['unit_price'],
+        'line_total' => $tax_line_item['line_total'],
+        'participant_count' => $tax_line_item['participant_count'],
+        'price_field_value_id' => $tax_line_item['price_field_value_id'],
+        'financial_type_id' => $tax_line_item['financial_type_id'],
+        'deductible_amount' => $tax_line_item['deductible_amount'],
+      ];
+
+      // A membership might be tax-exempty, but CIC still creates a line-item of 0$.
+      if (empty($p['qty'])) {
+        $p['qty'] = '0';
+      }
+      if (empty($p['line_total'])) {
+        $p['line_total'] = '0';
+      }
+
+      $t = civicrm_api3('LineItem', 'create', $p);
     }
 
     // Fetch all memberships for this contribution and associate the (future) contribution
@@ -159,63 +224,10 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
         'membership_id' => $dao2->membership_id,
       ]);
     }
-
-/*
-    $cc = $crypt->decrypt($dao->ccinfo);
-
-    $payment_params = [
-      'is_from_cardvault' => TRUE,
-      'contactID' => $dao->contact_id,
-      'billing_first_name' => '',
-      'billing_last_name' => '',
-      'amount' => $dao->total_amount,
-      'currencyID' => $dao->currency,
-      'invoiceID' => $invoice_id,
-      'invoice_id' => $invoice_id,
-      'credit_card_number' => $cc['number'],
-      'cvv2' => $cc['cvv2'],
-      'street_address' => '',
-      'city' => '',
-      'state_province' => '',
-      'country' => '',
-    ];
-
-    $payment_status_id = 1; // Completed
-
-    try {
-      $t = $paymentProcessor['object']->doPayment($payment_params);
-    }
-    catch (PaymentProcessorException $e) {
-      Civi::log()->error('Cardvault: failed payment: ' . $e->getMessage());
-      $payment_status_id = 4; // Failed
-    }
-
-    // The original contribution was already completed
-    $result = civicrm_api3('Contribution', 'repeattransaction', [
-      'original_contribution_id' => $dao->contribution_id,
-      'contribution_status_id' => $payment_status_id,
-      'invoice_id' => $invoice_id,
-      'trxn_result_code' => $payment_params['trxn_result_code'],
-      'trxn_id' => $payment_params['trxn_id'],
-      'payment_processor_id' => $payment_processor_id,
-      // 'is_email_receipt' => TRUE, // FIXME test & make configurable?
-    ]);
-
-    // Presumably there is a good reason why CiviCRM is not storing
-    // our new invoice_id. Anyone know?
-    $contribution_id = $result['id'];
-
-    civicrm_api3('Contribution', 'create', [
-      'id' => $contribution_id,
-      'invoice_id' => $invoice_id,
-    ]);
-
-*/
   }
-
 }
 
-
+// FIXME: use cdntaxcalculator instead.
 function calculateTaxes($contact, $total_amount) {
   return $total_amount * getTaxRate($contact);
 }
