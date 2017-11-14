@@ -28,7 +28,7 @@
         CRM.alert(result.error_message, CRM.ts('Error'), 'error');
       }
       else {
-        CRM.alert("Transaction processed: " + result['values']['trxn_id'] . ". You can close the popup and reload the page for more visual confirmations.", '', 'success');
+        CRM.alert("Transaction processed: " + result['values']['trxn_id'] + ". You can close the popup and reload the page for more visual confirmations.", '', 'success');
       }
     });
 
