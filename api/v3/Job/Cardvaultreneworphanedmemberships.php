@@ -11,13 +11,17 @@
  *   payment_processor_id (required): use the correct ID for live or test.
  *   payment_processor_mode (required): live or test
  *   recur_id (optional): only process a specific recurring contribution ID.
+ *
+ * This is similar to Job.Cardvaultrenewmemberships, except that it handles
+ * specifically memberships that do not have any associated contribution
+ * (legacy post-migration from the previous CRM).
  */
 function civicrm_api3_job_cardvaultreneworphanedmemberships($params) {
   // Running this job in parallell could generate bad duplicate contributions.
   $lock = new CRM_Core_Lock('civicrm.job.cardvaultreneworphanedmemberships');
 
   if (!$lock->acquire()) {
-    return civicrm_api3_create_success(ts('Failed to acquire lock. No memberships were renewed.'));
+    return civicrm_api3_create_success(ts('Failed to acquire lock. No orphaned memberships were renewed.'));
   }
 
   $sqlparams = [];
@@ -87,32 +91,24 @@ function civicrm_api3_job_cardvaultreneworphanedmemberships($params) {
     }
 
     $taxes = calculateTaxes($contact, $total_amount);
-
     $contribution = new CRM_Contribute_BAO_Contribution();
-
-
 
     // Set the contribution status to Pending, since we are not charging yet
     // and receive_date (for now) set to 'today', even if we haven't charged it yet,
     // but we will update this in the API call that processes this.
     $contribution->contribution_status_id = 2; // Pending
     $contribution->receive_date = date('YmdHis'); // Today
-    $contribution->financial_type_id = 237;
+    $contribution->financial_type_id = 237; // FIXME hardcoded
     $contribution->contact_id = $dao->contact_id;
     $contribution->payment_instrument_id = $pii;
     $contribution->currency = 'CAD';
-    $contribution->source = '2017 contributionless membership renewal';
+    $contribution->source = '2017 contributionless membership renewal'; // FIXME: hardcoded
     $contribution->is_test = 0;
     $contribution->is_pay_later = 0;
     $contribution->tax_amount = 0; // we don't use civicrm taxes.
     $contribution->total_amount = $total_amount + $taxes;
     $contribution->fee_amount = 0;
     $contribution->net_amount = $total_amount + $taxes;
-
-    // Generate a new invoice ID for this new contribution
-    // civicrm_api3_contribution_transact() does somethign similar.
-    //    $invoice_id = sha1(uniqid(rand(), TRUE));
-    //  FIXME TODO?: $contribution->invoice_id = $invoice_id;
 
     $contribution->save();
 
@@ -163,9 +159,7 @@ function civicrm_api3_job_cardvaultreneworphanedmemberships($params) {
         'membership_id' => $mem_row['membership_id'],
       ]);
     }
-
   }
-
 }
 
 function calculateTaxes($contact, $total_amount) {

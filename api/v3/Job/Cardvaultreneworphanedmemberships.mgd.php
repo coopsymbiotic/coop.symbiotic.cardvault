@@ -11,13 +11,13 @@
 return array(
   0 =>
   array(
-    'name' => 'Cron:Job.Cardvaultrenewmemberships',
+    'name' => 'Cron:Job.Cardvaultreneworphanedmemberships',
     'entity' => 'Job',
     'params' =>
     array(
       'version' => 3,
-      'name' => 'Cardvault Rewnew Memberships',
-      'description' => 'Renew memberships using the information in Cardvault',
+      'name' => 'Cardvault Rewnew Orphaned Memberships',
+      'description' => 'Renew orphaned memberships (without a contribution, 0$)',
       'run_frequency' => 'Yearly',
       'api_entity' => 'Job',
       'api_action' => 'cardvaultrenewmembership',
@@ -26,6 +26,3 @@ return array(
     'update' => 'never',
   ),
 );
-
-
-
