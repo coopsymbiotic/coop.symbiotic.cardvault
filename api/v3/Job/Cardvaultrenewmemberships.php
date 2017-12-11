@@ -58,12 +58,34 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
     $last_contact_id = $dao->contact_id;
 
     // Only prepare a contribution for contacts that have a saved card (in cardvault).
-    $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 ORDER BY created_date DESC', [
-      1 => [$dao->contact_id, 'Positive'],
-    ]);
+    if (isset($params['has_cardvault'])) {
+      $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 ORDER BY created_date DESC', [
+        1 => [$dao->contact_id, 'Positive'],
+      ]);
 
-    if (!$dao->fetch()) {
-      continue;
+      // Contact does not have a card, and we want only contacts with a card
+      if (!$dao->fetch() && $params['has_cardvault'] == 1) {
+        continue;
+      }
+
+      // Contact has a card, but we wanted only contacts without a card
+      if ($params['has_cardvault'] == 0) {
+        continue;
+      }
+    }
+
+    if (isset($params['cic_autorenew'])) {
+      $is_renew_membership = CRM_Core_DAO::singleValueQuery('SELECT renew_membership_52 FROM civicrm_value_membership_extras_7 WHERE entity_id = %1', [
+        1 => [$dao->contact_id, 'Positive'],
+      ]);
+
+      if (empty($is_renew_membership)) {
+        $is_renew_membership = 0;
+      }
+
+      if ($is_renew_membership != $params['cic_autorenew']) {
+        continue;
+      }
     }
 
     // FIXME: XXX: If no contribution was associated with the membership,
@@ -130,6 +152,7 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
     ]);
 
     $new_total_amount = 0;
+    $new_tax_amount = 0;
     $tax_line_item = NULL;
 
     foreach ($lineitem_result['values'] as $original_line_item) {
@@ -137,6 +160,11 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
       // FIXME: hack specific to CIC, because they are not (yet) using cdntaxcalculator.
       if ($original_line_item['label'] == 'hidden_taxes') {
         $tax_line_item = $original_line_item;
+        continue;
+      }
+
+      // Ignore donations for non-autorenew
+      if ($original_line_item['entity_table'] == 'civicrm_contribution' && empty($params['cic_autorenew'])) {
         continue;
       }
 
@@ -156,20 +184,33 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
       ];
 
       // Fetch the current amount of the line item (handle price increases).
-      $pfv = civicrm_api3('PriceFieldValue', 'getsingle', [
-        'id' => $original_line_item['price_field_value_id'],
-      ]);
+      if (!empty($original_line_item['price_field_value_id'])) {
+        $pfv = civicrm_api3('PriceFieldValue', 'getsingle', [
+          'id' => $original_line_item['price_field_value_id'],
+        ]);
 
-      $p['unit_price'] = $pfv['amount'];
-      $p['line_total'] = $pfv['amount'] * $p['qty'];
+        $p['unit_price'] = $pfv['amount'];
+        $p['line_total'] = $pfv['amount'] * $p['qty'];
+        # $p['tax_amount'] = $pfv['amount'] * $p['qty'];
+
+        # $taxes = CRM_Cdntaxcalculator_BAO_CDNTaxes::getTaxesForContact($dao->contact_id);
+        # $p['tax_amount'] = round($p['line_total'] * ($taxes['HST_GST']/100), 2);
+        # $p['line_total'] += $p['tax_amount'];
+      }
+      elseif (!$original_line_item['line_total']) {
+        // Probably a 0$ item, so it's OK to not have a price_field_value_id
+        // and we can just leave the line_total and unit_price empty.
+      }
 
       if (empty($p['line_total'])) {
         $p['line_total'] = '0';
+        $p['tax_amount'] = '0';
       }
 
       $t = civicrm_api3('LineItem', 'create', $p);
 
       $new_total_amount += $p['line_total'];
+      # $new_tax_amount += $p['tax_amount'];
     }
 
     // If total amount > 0, then recalculate taxes, and create hiden_tax entry skipped above.
@@ -178,7 +219,7 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
       $taxes = CRM_Cdntaxcalculator_BAO_CDNTaxes::getTaxesForContact($dao->contact_id);
 
       $tax_line_item['qty'] = round($new_total_amount * ($taxes['HST_GST']/100), 2);
-      $tax_line_item['line_total'] = $tax_line_item['amount'] * $tax_line_item['qty'];
+      $tax_line_item['line_total'] = $tax_line_item['unit_price'] * $tax_line_item['qty'];
 
       $p = [
         'entity_table' => 'civicrm_contribution',
@@ -204,7 +245,18 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
       }
 
       $t = civicrm_api3('LineItem', 'create', $p);
+
+      // Save for below
+      $new_tax_amount = $tax_line_item['line_total'];
     }
+
+    // Update the total amount on the contribution
+    $contribution->total_amount = $new_total_amount + $new_tax_amount;
+    # $contribution->net_amount = $contribution->total_amount - $new_tax_amount;
+    $contribution->net_amount = $contribution->total_amount;
+    $contribution->non_deductible_amount = $contribution->total_amount;
+    # $contribution->tax_amount = $new_tax_amount;
+    $contribution->save();
 
     // Fetch all memberships for this contribution and associate the (future) contribution
     $sql2 = 'SELECT m.contact_id, m.id as membership_id
