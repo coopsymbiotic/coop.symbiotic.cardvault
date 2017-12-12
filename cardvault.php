@@ -291,4 +291,11 @@ function cardvault_civicrm_searchTasks($objectType, &$tasks) {
       'result' => TRUE,
     );
   }
+  if ($objectType == 'contribution') {
+    $tasks[105] = array(
+      'title' => ts('Cardvault: Process pending contribution', array('domain' => 'coop.symbiotic.cardvault')),
+      'class' => 'CRM_Cardvault_Form_Task_ChargePending',
+      'result' => TRUE,
+    );
+  }
 }
