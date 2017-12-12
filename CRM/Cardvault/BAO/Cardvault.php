@@ -177,7 +177,7 @@ class CRM_Cardvault_BAO_Cardvault {
       throw new Exception("The contribution cannot be charged, it is already set as 'completed'.");
     }
 
-    $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 ORDER BY created_date DESC', [
+    $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 AND expiry_date > "2017-10-31" ORDER BY created_date DESC', [ // FIXME date
       1 => [$contribution['contact_id'], 'Positive'],
     ]);
 
