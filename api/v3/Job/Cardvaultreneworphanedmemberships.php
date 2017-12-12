@@ -26,18 +26,27 @@ function civicrm_api3_job_cardvaultreneworphanedmemberships($params) {
 
   $sqlparams = [];
 
+  $require_cardvault = FALSE;
+  $cardvault_sql = '';
+
+  // NB: we only support "has_cardvault=1", not "has_cardvault=0".
+  if (!empty($params['has_cardvault'])) {
+    $cardvault_sql = ' inner join civicrm_cardvault cv on cv.contact_id = m1.contact_id ';
+  }
+
   // contribution_status_id: 2=Pending, 5=InProgress
   $sql = "
-      SELECT m1.contact_id, max(cv.id) as max_cv_id
-    FROM civicrm_membership m1
-      inner join civicrm_cardvault cv on cv.contact_id = m1.contact_id
-    WHERE NOT exists(SELECT *
+      SELECT m1.id as membership_id, m1.contact_id, " . ($cardvault_sql ? 'max(cv.id) as max_cv_id' : '0 as max_cv_id') . "
+        FROM civicrm_membership m1
+        $cardvault_sql
+        LEFT JOIN civicrm_contact contact ON (contact.id = m1.contact_id)
+        WHERE NOT exists(SELECT *
                      FROM civicrm_contribution c
                      WHERE c.contact_id = m1.contact_id)
           AND NOT exists(SELECT *
                          FROM civicrm_membership m2
                          WHERE m2.contact_id = m1.contact_id AND m2.end_date > m1.end_date)
-          AND m1.end_date = '2017-12-31'
+          AND m1.end_date = '2017-12-31' AND m1.status_id = 3 AND contact.is_deceased = 0
   ";
 
   // in case the job was called to execute a specific contact id
@@ -52,10 +61,30 @@ function civicrm_api3_job_cardvaultreneworphanedmemberships($params) {
   $province = NULL;
 
   while ($dao->fetch()) {
+    if (isset($params['cic_autorenew'])) {
+      // This is weird, but we check for the autorenew of all renewal-ready memberships
+      // and prioritize (order by) the "autorenew = yes".
+      $is_renew_membership = CRM_Core_DAO::singleValueQuery('SELECT renew_membership_52 FROM civicrm_membership m LEFT JOIN civicrm_value_membership_extras_7 extras ON (extras.entity_id = m.id) WHERE m.contact_id = %1 AND m.status_id = 3 ORDER BY renew_membership_52 DESC LIMIT 1', [
+        1 => [$dao->contact_id, 'Positive'],
+      ]);
+
+      if (empty($is_renew_membership)) {
+        $is_renew_membership = 0;
+      }
+
+      if ($is_renew_membership != $params['cic_autorenew']) {
+drush_log('COUCOU 4a', 'ok');
+        continue;
+      }
+    }
+drush_log('COUCOU 4b', 'ok');
 
     $contact_id = $dao->contact_id;
     $cv_id = $dao->max_cv_id;
 
+    // NB: [ML] this fetches the cardvault entry for the CC type (instrument)
+    // but for non-cardvault transactions, we will default to paying by cheque,
+    // so I replaced the "INNER JOIN" by a "LEFT JOIN".
     $sql2 = "select m.id as membership_id, m.contact_id,
        m.membership_type_id,
        mt.name as label,
@@ -64,11 +93,12 @@ function civicrm_api3_job_cardvaultreneworphanedmemberships($params) {
        m.id as membership_id,
        ov.value as payment_instrument_id
   from civicrm_membership m
-      inner join civicrm_cardvault cv on cv.contact_id = $contact_id and cv.id = $cv_id
+      left join civicrm_cardvault cv on cv.contact_id = $contact_id and cv.id = $cv_id
       inner join civicrm_membership_type mt on mt.id = m.membership_type_id
       left join civicrm_option_value ov on ov.option_group_id = 10 and ov.name = cv.cc_type
   where m.contact_id = $contact_id
     and m.end_date = '2017-12-31'
+    and m.status_id = 3
   order by m.contact_id,
           mt.minimum_fee desc,
           case when mt.name like '%ACCN%' then 1 else 0 end,
@@ -82,7 +112,12 @@ function civicrm_api3_job_cardvaultreneworphanedmemberships($params) {
     ))['values'][0];
 
     $total_amount = 0;
-    $pii = 1;
+    $pii = 1; // Credit Card
+
+    if (isset($params['cic_autorenew']) && empty($params['cic_autorenew'])) {
+      $pii = 4; // Cheque
+    }
+
     foreach ($row as $mem_row) {
       $total_amount = $total_amount + $mem_row['minimum_fee'];
       if (!empty($mem_row['payment_instrument_id'])) {

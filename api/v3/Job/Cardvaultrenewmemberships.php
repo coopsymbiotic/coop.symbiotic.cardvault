@@ -23,13 +23,15 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
   $sqlparams = [];
 
   // contribution_status_id: 2=Pending, 5=InProgress
-  $sql = 'SELECT m.contact_id,
+  $sql = 'SELECT m.contact_id, m.id as membership_id,
             contrib.id as contribution_id, contrib.contribution_status_id,
             contrib.total_amount, contrib.currency, contrib.invoice_id
       FROM civicrm_membership m
       LEFT JOIN civicrm_membership_payment mp ON (mp.membership_id = m.id)
       LEFT JOIN civicrm_contribution contrib ON (contrib.id = mp.contribution_id)
-      WHERE m.status_id = 3'; // FIXME hardcoded status (renewal ready).  I think this is ok (Marc).
+      LEFT JOIN civicrm_value_membership_extras_7 extras ON (extras.entity_id = m.id)
+      LEFT JOIN civicrm_contact contact ON (contact.id = m.contact_id)
+      WHERE m.status_id = 3 AND contact.is_deceased = 0'; // FIXME hardcoded status (renewal ready).  I think this is ok (Marc).
 
   // FIXME: Only do things that have a corresponding cc vault entry for the contact
 
@@ -40,7 +42,8 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
   }
 
   // There can be multiple memberships for a given contribution
-  $sql .= ' ORDER BY m.contact_id, contrib.id DESC';
+  // Since we check the autorenew later on, prioritize any membership with autorenew
+  $sql .= ' ORDER BY m.contact_id, extras.renew_membership_52 DESC, contrib.id DESC';
 
   $counter = 0;
   $error_count = 0;
@@ -60,7 +63,7 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
     // Only prepare a contribution for contacts that have a saved card (in cardvault).
     if (isset($params['has_cardvault'])) {
       $dao = CRM_Core_DAO::executeQuery('SELECT * FROM civicrm_cardvault WHERE contact_id = %1 ORDER BY created_date DESC', [
-        1 => [$dao->contact_id, 'Positive'],
+        1 => [$dao->membership_id, 'Positive'],
       ]);
 
       // Contact does not have a card, and we want only contacts with a card
@@ -75,7 +78,9 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
     }
 
     if (isset($params['cic_autorenew'])) {
-      $is_renew_membership = CRM_Core_DAO::singleValueQuery('SELECT renew_membership_52 FROM civicrm_value_membership_extras_7 WHERE entity_id = %1', [
+      // This is weird, but we check for the autorenew of all renewal-ready memberships
+      // and prioritize (order by) the "autorenew = yes".
+      $is_renew_membership = CRM_Core_DAO::singleValueQuery('SELECT renew_membership_52 FROM civicrm_membership m LEFT JOIN civicrm_value_membership_extras_7 extras ON (extras.entity_id = m.id) WHERE m.contact_id = %1 AND m.status_id = 3 ORDER BY renew_membership_52 DESC LIMIT 1', [
         1 => [$dao->contact_id, 'Positive'],
       ]);
 
@@ -216,7 +221,7 @@ function civicrm_api3_job_cardvaultrenewmemberships($params) {
     // If total amount > 0, then recalculate taxes, and create hiden_tax entry skipped above.
     // nb: the 'amount' of the line_item for hidden_taxes should always be 1.
     if ($new_total_amount > 0 && $tax_line_item !== NULL) {
-      $taxes = CRM_Cdntaxcalculator_BAO_CDNTaxes::getTaxesForContact($dao->contact_id);
+      $taxes = CRM_Cdntaxcalculator_BAO_CDNTaxes::getTaxRatesForContact($dao->contact_id);
 
       $tax_line_item['qty'] = round($new_total_amount * ($taxes['HST_GST']/100), 2);
       $tax_line_item['line_total'] = $tax_line_item['unit_price'] * $tax_line_item['qty'];
