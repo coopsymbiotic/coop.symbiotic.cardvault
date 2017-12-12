@@ -193,38 +193,48 @@ class CRM_Cardvault_BAO_Cardvault {
     // civicrm_api3_contribution_transact() does somethign similar.
     $invoice_id = sha1(uniqid(rand(), TRUE));
 
+    $contact = civicrm_api3('Contact', 'getsingle', [
+      'id' => $contribution['contact_id'],
+    ]);
+
     $payment_params = [
       'is_from_cardvault' => TRUE,
       'contactID' => $contribution['contact_id'],
-      'billing_first_name' => '',
-      'billing_last_name' => '',
+      'billing_first_name' => $contact['first_name'],
+      'billing_last_name' => $contact['last_name'],
       'amount' => $contribution['total_amount'],
       'currencyID' => $contribution['currency'],
       'invoiceID' => $invoice_id,
       'invoice_id' => $invoice_id,
-      'credit_card_number' => '4111111111111111', // FIXME $cc['number'],
+      'credit_card_number' => $cc['number'],
       'cvv2' => $cc['cvv2'],
-      'street_address' => '',
-      'city' => '',
-      'state_province' => '',
-      'country' => '',
+      'street_address' => $contact['street_address'],
+      'city' => $contact['city'],
+      'state_province' => $contact['state_province'],
+      'country' => $contact['country'],
     ];
 
     $result = [];
     $result['payment_status_id'] = 1; // Completed
 
-    $payment_processor_id = 4; // FIXME
-    $payment_processor_mode = 'test'; // FIXME ($contribution['is_test'] ? 'test' : 'live');
+    $payment_processor_id = 3; // FIXME
+    $payment_processor_mode = ($contribution['is_test'] ? 'test' : 'live');
 
     $paymentProcessor = CRM_Financial_BAO_PaymentProcessor::getPayment($payment_processor_id, $payment_processor_mode);
 
     try {
       $t = $paymentProcessor['object']->doPayment($payment_params);
     }
-    catch (PaymentProcessorException $e) {
+    catch (Exception $e) {
       Civi::log()->error('Cardvault: failed payment: ' . $e->getMessage());
       $result['error_message'] = $e->getMessage();
       $result['payment_status_id'] = 4; // Failed
+
+      civicrm_api3('Note', 'create', [
+        'entity_table' => 'civicrm_contact',
+        'entity_id' => $contribution['contact_id'],
+        'note' => 'Cardvault failed to process the credit card: ' . $e->getMessage(),
+      ]);
     }
 
     $result['trxn_id'] = $t['trxn_id'];
@@ -246,6 +256,27 @@ class CRM_Cardvault_BAO_Cardvault {
     }
 
     return $result;
+  }
+
+  /**
+   * Set a contribution as failed and log a note.
+   */
+  public static function failContribution($contribution_id, $contact_id, $message) {
+    civicrm_api3('Contribution', 'create', [
+      'id' => $contribution_id,
+      'contribution_status_id' => 'Failed',
+    ]);
+
+    $contact_id = civicrm_api3('Contribution', 'getvalue', [
+      'id' => $contribution_id,
+      'return' => 'contact_id',
+    ]);
+
+    civicrm_api3('Note', 'create', [
+      'entity_table' => 'civicrm_contact',
+      'entity_id' => $contact_id,
+      'note' => 'Cardvault failed to process the credit card: ' . $message,
+    ]);
   }
 
 }
