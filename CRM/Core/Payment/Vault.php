@@ -97,8 +97,6 @@ class CRM_Core_Payment_Vault extends CRM_Core_Payment {
       'credit_card_expire_year' => $params['year'],
       'currency' => $params['currencyID'],
     ]);
-
-    Civi::log()->warning('doDirectPayment: ' . print_r($params, 1));
   }
 
   /**
