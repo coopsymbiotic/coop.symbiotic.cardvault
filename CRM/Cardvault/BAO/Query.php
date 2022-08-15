@@ -40,7 +40,7 @@ class CRM_Cardvault_BAO_Query extends CRM_Contact_BAO_Query_Interface {
    *
    * @return mixed
    */
-  public function from($name, $mode, $side) {
+  public static function from($name, $mode, $side) {
     $from = '';
     switch ($name) {
       case 'civicrm_contact':
@@ -50,19 +50,19 @@ class CRM_Cardvault_BAO_Query extends CRM_Contact_BAO_Query_Interface {
     return $from;
   }
 
-  public function where(&$query) {
+  public static function where(&$query) {
     $grouping = NULL;
     foreach ($query->_params as $param) {
-      if ($this->isACardvaultParam($param)) {
+      if (self::isACardvaultParam($param)) {
         if ($query->_mode == CRM_Contact_BAO_QUERY::MODE_CONTACTS) {
           $query->_useDistinct = TRUE;
         }
-        $this->whereClauseSingle($param, $query);
+        self::whereClauseSingle($param, $query);
       }
     }
   }
 
-  private function isACardvaultParam($param) {
+  private static function isACardvaultParam($param) {
     $paramHasName = isset($param[0]) && !empty($param[0]);
     if ($paramHasName && substr($param[0], 0, 9) == 'cardvault') {
       return TRUE;
@@ -70,7 +70,7 @@ class CRM_Cardvault_BAO_Query extends CRM_Contact_BAO_Query_Interface {
     return FALSE;
   }
 
-  private function whereClauseSingle($values, &$query) {
+  private static function whereClauseSingle($values, &$query) {
     list($name, $op, $value, $grouping, $wildcard) = $values;
 
     $fields = $this->getFields();
