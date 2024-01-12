@@ -299,3 +299,27 @@ function cardvault_civicrm_searchTasks($objectType, &$tasks) {
     );
   }
 }
+
+/**
+ * Implements hook_civicrm_check().
+ */
+function cardvault_civicrm_check(&$messages) {
+  if (!function_exists('mcrypt_module_open')) {
+    $messages[] = new CRM_Utils_Check_Message(
+      'cardvault_php_mcrypt',
+      ts('php%1-mcrypt is missing.', [1 => PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION]),
+      ts('Cardvault - PHP mcrypt'),
+      \Psr\Log\LogLevel::CRITICAL,
+      'fa-flag'
+    );
+    return;
+  }
+
+  $messages[] = new CRM_Utils_Check_Message(
+    'cardvault_php_mcrypt',
+    ts('Package is installed.'),
+    ts('Cardvault - mcrypt'),
+    \Psr\Log\LogLevel::INFO,
+    'fa-check'
+  );
+}
