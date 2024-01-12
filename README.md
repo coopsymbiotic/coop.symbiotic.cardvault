@@ -1,13 +1,13 @@
 Card Vault
 ==========
 
-WARNING: Please do not use this module. Work in progress / proof of concept.
+WARNING: Please do not use this module, it is not maintained.
 
 Requirements
 ------------
 
-- CiviCRM 4.7
-- PHP 5.6, php-mcrypt
+- CiviCRM 5.x+
+- PHP 7+ with php-mcrypt
 
 Support
 -------
